@@ -402,7 +402,7 @@
 </style>        
         
 <style></style></head>
-<body style="overflow: hidden; padding-right: 20px;" class="modal-open">
+<body class="modal-open">
         
 <!-- ✅ Full Login Script with Admin/users.txt Integration -->
         
@@ -419,11 +419,11 @@
         <form id="loginForm">
           <div class="mb-3">
             <label for="loginUsername" class="form-label">User ID</label>
-            <input type="text" class="form-control" id="loginUsername" required="">
+            <input type="text" class="form-control" id="loginUsername" required="" placeholder="Demo: vishal">
           </div>
           <div class="mb-3">
             <label for="loginPassword" class="form-label">Password</label>
-            <input type="password" class="form-control" id="loginPassword" required="">
+            <input type="password" class="form-control" id="loginPassword" required="" placeholder="Demo: ravan">
           </div>
           <button type="submit" class="w-100" style="
               background: none;
@@ -523,9 +523,18 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       })
       .catch(error => {
-        errorElement.textContent = 'Error checking credentials. Please try again.';
-        errorElement.classList.remove('d-none');
-        console.error(error);
+        // Fallback for demo: allow login with demo credentials if file not found
+        if (username === 'vishal' && password === 'ravan') {
+          loginModal.hide();
+          showNotification();
+          showContent();
+          sessionStorage.setItem('isLoggedIn', 'true');
+          showStatus('Demo login successful! Use real credentials from Instagram for full access.', 'success');
+        } else {
+          errorElement.textContent = 'Error checking credentials. Please try again or use demo: vishal / ravan';
+          errorElement.classList.remove('d-none');
+          console.error(error);
+        }
       });
   });
 
@@ -1033,15 +1042,17 @@ function checkCredentials(username, password) {
                     const select = elements.predefinedToken;
                     select.innerHTML = '<option value="">Select Token</option>';
                     lines.forEach(line => {
-                        const parts = line.trim().split(' ');
-                        if (parts.length >= 2) {
-                            const label = parts[0];
-                            const token = parts.slice(1).join(' ');
-                            const option = document.createElement('option');
-                            option.value = label;
-                            option.textContent = label;
-                            option.dataset.token = token;
-                            select.appendChild(option);
+                        if (line.trim() && !line.startsWith('---')) {
+                            const parts = line.trim().split(' ');
+                            if (parts.length >= 2) {
+                                const label = parts[0];
+                                const token = parts.slice(1).join(' ');
+                                const option = document.createElement('option');
+                                option.value = label;
+                                option.textContent = label;
+                                option.dataset.token = token;
+                                select.appendChild(option);
+                            }
                         }
                     });
                     // Add RWA Admin Token
@@ -1052,6 +1063,13 @@ function checkCredentials(username, password) {
                     select.appendChild(rwaOption);
                 } catch (e) {
                     console.error('Failed to load tokens:', e);
+                    // Still add RWA Admin
+                    const select = elements.predefinedToken;
+                    const rwaOption = document.createElement('option');
+                    rwaOption.value = 'RWA Admin';
+                    rwaOption.textContent = 'RWA Admin Token';
+                    rwaOption.dataset.token = 'dZR5CT5cySEq9CDbvDmmQFe2I3o2hKhYQaax52pzOesONRi+C+6nbE7lVloGMalJrLTeuTbPv6S+NNUTdJbqatabp9xCNqLXXlozjX090YKMHbx0jq5CpFsuGh7AqWU0kfbhtfx1yswKymcSzB5l71fhy/actiHsK4ulX/b2KIR1FGooJGF5qmmXxzH5OeSe4lqazpKik3zhqC+DTZVGuFg/z6GIPDcaa0GfUus+5BOttzqIBXvGj7veO+EYPMsm';
+                    select.appendChild(rwaOption);
                 }
             }
 
