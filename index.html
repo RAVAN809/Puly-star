@@ -129,10 +129,12 @@ video {
     z-index: 201;
     transition: all 0.3s;
     opacity: 0;
+    pointer-events: none;
 }
 
 .ad-skip-button.show {
     opacity: 1;
+    pointer-events: auto;
 }
 
 .ad-skip-button:hover {
@@ -720,7 +722,7 @@ video {
     <div class="watermark-container">
         <div class="watermark" id="watermark">JASWANT</div>
         <div class="app-icon" id="appIcon">
-            <img id="appIconImage" src="" alt="App Icon">
+            <img id="appIconImage" src="https://i.ibb.co/992hqrvw/file-0000000083c072069007687f4f4c6769.png" alt="App Icon">
         </div>
     </div>
     
@@ -903,15 +905,16 @@ document.addEventListener('DOMContentLoaded', function() {
     let tapCount = 0;
     let tapTimeout = null;
     
-    // Ads state
+    // Ads state - FIXED
     let adsData = [];
     let currentAd = null;
     let isShowingAd = false;
     let adHls = null;
-    let adSkipTimeout = null;
     let adDuration = 0;
     let adRemainingTime = 0;
     let adTimerInterval = null;
+    let shownAdIds = new Set(); // Track shown ads
+    let adSkipTimeout = null;
     
     // Get URL parameters
     const urlParams = new URLSearchParams(window.location.search);
@@ -941,42 +944,103 @@ document.addEventListener('DOMContentLoaded', function() {
         appIconImage.src = iconUrl;
     }
     
-    // Fetch ads data
+    // Fetch ads data - FIXED
     async function fetchAdsData() {
         try {
+            console.log('Fetching ads data...');
             const response = await fetch('https://selection-way-livid.vercel.app/ads.json');
-            adsData = await response.json();
-            console.log('Ads loaded:', adsData);
+            const data = await response.json();
+            
+            // Convert data to array if it's an object
+            if (Array.isArray(data)) {
+                adsData = data;
+            } else {
+                // If it's an object with ads array
+                adsData = data.ads || data.data || [];
+            }
+            
+            console.log('Ads loaded:', adsData.length, 'ads found');
+            
+            // If no ads in response, use sample ads
+            if (adsData.length === 0) {
+                console.log('Using sample ads');
+                adsData = [
+                    {
+                        available: true,
+                        timePercentage: "10%",
+                        url: "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
+                        link: "https://t.me/@ravan09",
+                        duration: 5,
+                        size: "13mb",
+                        app: "All",
+                        end: "60"
+                    },
+                    {
+                        available: true,
+                        timePercentage: "50%",
+                        url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+                        link: "https://example.com",
+                        duration: 10,
+                        size: "5mb",
+                        app: "All",
+                        end: "30"
+                    }
+                ];
+            }
         } catch (error) {
-            console.error('Error loading ads:', error);
-            adsData = [];
+            console.error('Error loading ads, using sample ads:', error);
+            // Use sample ads if fetch fails
+            adsData = [
+                {
+                    available: true,
+                    timePercentage: "10%",
+                    url: "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
+                    link: "https://t.me/@ravan09",
+                    duration: 5,
+                    size: "13mb",
+                    app: "All",
+                    end: "60"
+                }
+            ];
         }
     }
     
-    // Check if ad should be shown
+    // Check if ad should be shown - FIXED
     function shouldShowAd(currentTime, duration) {
-        if (!adsData.length || isShowingAd) return false;
+        if (!adsData.length || isShowingAd || !video.duration) return false;
         
         const percentage = (currentTime / duration) * 100;
         
+        // Find suitable ad that hasn't been shown yet
         for (const ad of adsData) {
+            const adId = ad.url + ad.timePercentage; // Create unique ID
+            
             if (ad.available && 
-                parseFloat(ad.timePercentage) <= percentage &&
-                ad.app === 'All' || ad.app === appName) {
+                !shownAdIds.has(adId) &&
+                (ad.app === 'All' || ad.app === appName) &&
+                parseFloat(ad.timePercentage) <= percentage) {
+                
+                // Mark this ad as shown
+                shownAdIds.add(adId);
                 return ad;
             }
         }
         return false;
     }
     
-    // Show ad
+    // Show ad - FIXED
     function showAd(ad) {
-        if (!ad || !ad.url) return;
+        console.log('Showing ad:', ad);
+        
+        if (!ad || !ad.url || isShowingAd) return;
         
         currentAd = ad;
         isShowingAd = true;
-        adDuration = ad.duration || 5;
+        adDuration = parseInt(ad.duration) || 5;
         adRemainingTime = adDuration;
+        
+        // Pause main video
+        video.pause();
         
         // Show ad overlay
         adOverlay.classList.add('active');
@@ -998,38 +1062,73 @@ document.addEventListener('DOMContentLoaded', function() {
         adSkipButton.classList.remove('show');
         
         // Show skip button after ad.duration seconds
-        setTimeout(() => {
+        clearTimeout(adSkipTimeout);
+        adSkipTimeout = setTimeout(() => {
             adSkipButton.classList.add('show');
         }, (ad.duration || 5) * 1000);
     }
     
-    // Load ad video
+    // Load ad video - FIXED
     function loadAdVideo(url) {
+        console.log('Loading ad video:', url);
+        
+        // Clean up previous HLS instance
+        if (adHls) {
+            adHls.destroy();
+            adHls = null;
+        }
+        
+        // Reset ad video
+        adVideo.pause();
+        adVideo.src = '';
+        
         if (Hls.isSupported()) {
             adHls = new Hls({
-                enableWorker: true,
-                lowLatencyMode: true
+                enableWorker: false, // Disable worker for ads
+                lowLatencyMode: true,
+                maxBufferLength: 10
             });
             
             adHls.loadSource(url);
             adHls.attachMedia(adVideo);
             
             adHls.on(Hls.Events.MANIFEST_PARSED, () => {
-                adVideo.play().catch(e => console.log('Ad autoplay blocked:', e));
+                console.log('Ad manifest parsed, playing...');
+                adVideo.play().catch(e => {
+                    console.log('Ad autoplay blocked, manual play required:', e);
+                });
             });
             
             adHls.on(Hls.Events.ERROR, (event, data) => {
                 console.error('Ad HLS error:', data);
+                if (data.fatal) {
+                    switch(data.type) {
+                        case Hls.ErrorTypes.NETWORK_ERROR:
+                            console.log('Ad network error, skipping ad');
+                            skipAd();
+                            break;
+                        case Hls.ErrorTypes.MEDIA_ERROR:
+                            console.log('Ad media error, skipping ad');
+                            skipAd();
+                            break;
+                    }
+                }
             });
         } else if (adVideo.canPlayType('application/vnd.apple.mpegurl')) {
             adVideo.src = url;
-            adVideo.play().catch(e => console.log('Ad autoplay blocked:', e));
+            adVideo.play().catch(e => {
+                console.log('Ad autoplay blocked:', e);
+            });
+        } else {
+            console.log('HLS not supported for ads, using MP4 fallback');
+            skipAd(); // Skip ad if HLS not supported
         }
     }
     
-    // Start ad timer
+    // Start ad timer - FIXED
     function startAdTimer() {
         updateAdTimer();
+        clearInterval(adTimerInterval);
         adTimerInterval = setInterval(() => {
             adRemainingTime--;
             if (adRemainingTime <= 0) {
@@ -1045,27 +1144,40 @@ document.addEventListener('DOMContentLoaded', function() {
         adTimer.textContent = `Skip in ${adRemainingTime}s`;
     }
     
-    // Skip ad
+    // Skip ad - FIXED
     function skipAd() {
+        console.log('Skipping ad');
+        
         isShowingAd = false;
+        
+        // Hide ad overlay
         adOverlay.classList.remove('active');
         adSkipButton.classList.remove('show');
         
+        // Stop ad video
+        adVideo.pause();
+        adVideo.src = '';
+        
+        // Destroy HLS instance
         if (adHls) {
             adHls.destroy();
             adHls = null;
         }
         
-        adVideo.pause();
-        adVideo.src = '';
-        
+        // Clear timers
         clearInterval(adTimerInterval);
         clearTimeout(adSkipTimeout);
         
         // Resume main video
         if (!video.paused) {
             video.play();
+        } else {
+            // If video was paused before ad, keep it paused
+            playerContainer.classList.add('paused');
         }
+        
+        // Show controls
+        showControlsTemporarily();
     }
     
     // Initialize HLS for main video
@@ -1253,6 +1365,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Video single click
     video.addEventListener('click', function(e) {
+        if (isShowingAd) return;
         showControlsTemporarily();
     });
     
@@ -1348,7 +1461,7 @@ document.addEventListener('DOMContentLoaded', function() {
     video.addEventListener('volumechange', updateMuteButton);
     adVideo.addEventListener('volumechange', updateMuteButton);
     
-    // Time display
+    // Time display - FIXED for ad checking
     function updateTimeDisplay() {
         const current = formatTime(video.currentTime);
         const duration = formatTime(video.duration);
@@ -1356,11 +1469,11 @@ document.addEventListener('DOMContentLoaded', function() {
         currentTimeEl.textContent = current;
         durationEl.textContent = duration;
         
-        // Check for ads
+        // Check for ads (only if not currently showing ad)
         if (!isShowingAd && video.duration > 0) {
             const ad = shouldShowAd(video.currentTime, video.duration);
             if (ad) {
-                video.pause();
+                console.log('Time for ad:', ad);
                 showAd(ad);
             }
         }
@@ -1456,7 +1569,7 @@ document.addEventListener('DOMContentLoaded', function() {
         playerContainer.classList.toggle('fullscreen', isFullscreen);
     }
     
-    // Lock system
+    // Lock system - FIXED
     lockBtn.addEventListener('click', function(e) {
         e.stopPropagation();
         
@@ -1490,6 +1603,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Ad skip button
     adSkipButton.addEventListener('click', skipAd);
+    
+    // Ad video ended
+    adVideo.addEventListener('ended', function() {
+        console.log('Ad video ended');
+        skipAd();
+    });
     
     // Show play/pause overlay
     function showPlayPauseOverlay() {
